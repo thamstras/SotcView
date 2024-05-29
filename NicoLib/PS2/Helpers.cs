@@ -1,4 +1,7 @@
-﻿using System;
+﻿// This code is Licensed under the Apache License 2.0
+// Copyright 2024 OpenKH Contributors
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;

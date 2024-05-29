@@ -1,4 +1,11 @@
-﻿// NOTE: The code in this file is lifted (with modifications) from the OpenKH project.
+﻿// NOTE: The code in this file is lifted (with modifications) from the OpenKH project. https://github.com/OpenKH/OpenKh
+// This code is Licensed under the Apache License 2.0
+// Copyright 2024 OpenKH Contributors
+// CHANGES:
+//   - Fill in missing opcodes
+//   - Add lots of logging
+//   - Handle skipping writes
+//   - Handle UNPACK V4-5
 
 
 namespace NicoLib.PS2
