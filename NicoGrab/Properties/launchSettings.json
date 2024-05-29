@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "NicoGrab": {
+      "commandName": "Project",
+      "commandLineArgs": "\"C:\\Users\\TCasson\\Downloads\\SotC-Viewer-master\\index\\nico.dat.index\" \"C:\\ISOs\\Shadow of the Colossus (Europe, Australia) (En,Fr,De,Es,It)\\NICO.DAT\" \"C:\\SotC\\Dump\""
+    }
+  }
+}
