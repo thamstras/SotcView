@@ -1,10 +1,10 @@
 #version 330
 
 uniform sampler2D tex_diffuse;
-uniform vec4 fog_color;
-uniform float fog_near;
-uniform float fog_far;
-uniform vec2 uv_offset;
+//uniform vec4 fog_color;
+//uniform float fog_near;
+//uniform float fog_far;
+//uniform vec2 uv_offset;
 
 in vec4 vColor;
 in vec2 vTex;
@@ -15,25 +15,27 @@ out vec4 FragColor;
 void main()
 {
 
-	vec4 texColor = texture2D(tex_diffuse, vTex + uv_offset);
+	vec4 texColor = texture2D(tex_diffuse, vTex);
 	
+	float texAlpha = texColor.a;
+	texAlpha = texAlpha * 1.9921875f;
+
+	float vertAlpha = vColor.a;
+	vertAlpha = vertAlpha * 1.9921875f;
+
+	float trueAlpha = vertAlpha * texAlpha;
+	float effectiveAlpha = min(trueAlpha, 1.0);
+
 	vec4 finalColor = texColor * vColor;
-	// NOTE: This float value is exact
-	//finalColor.a = finalColor.a * 1.9921875f;
+	finalColor.a = effectiveAlpha;
 	
-	if (finalColor.a < 0.01f)
+	if (trueAlpha < 0.01f)
 		discard;
 	
-	float trueAlpha = finalColor.a;
-	finalColor.a = min(finalColor.a, 1.0);
-	// TODO: use trueAlpha for something
+	// cheap "bloom" emulation
+	if (trueAlpha > 1.0f)
+		finalColor.rgb = finalColor.rgb * trueAlpha;
 	
-	//finalColor.r = finalColor.r * finalColor.a;
-	//finalColor.g = finalColor.g * finalColor.a;
-	//finalColor.b = finalColor.b * finalColor.a;
+	FragColor = finalColor;
 
-	float fogAmount = smoothstep(fog_near, fog_far, vDepth);
-
-	FragColor = mix(finalColor, fog_color, fogAmount);
-	FragColor.a = finalColor.a;
 }

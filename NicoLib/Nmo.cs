@@ -138,8 +138,8 @@ namespace NicoLib
         {
             Xff.SectionDef section = xff.Sections.FirstOrDefault(s => s.Name == ".rodata") ?? throw new ApplicationException("NMO .rodata section not found!");
 
-            MemoryStream stream = new MemoryStream(section.Data, false);
-            BinaryReader reader = new BinaryReader(stream);
+            using MemoryStream stream = new MemoryStream(section.Data, false);
+            using BinaryReader reader = new BinaryReader(stream);
             reader.Seek(xff.Header.Off_sign);
 
             FileHeader header = BinaryMapping.ReadObject<FileHeader>(stream);
@@ -194,7 +194,7 @@ namespace NicoLib
         public enum Primative : byte
         {
             PRIMATIVE_TRIANGLE_STRIP = 0x30,
-            PRIMATIVE_TRIANGLE_STRIP_TWO_SIDED = 0x31
+            PRIMATIVE_TRIANGLES = 0x31          // TODO: STILL WRONG
         }
 
         public enum MeshFormat : ushort
@@ -298,7 +298,7 @@ namespace NicoLib
                     }
 
                     if (header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP
-                        && header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP_TWO_SIDED)
+                        && header.PrimativeType != Primative.PRIMATIVE_TRIANGLES)
                         throw new NotImplementedException($"Encountered unknown Primative Type {(byte)header.PrimativeType:X}");
 
                     strip.PrimativeType = header.PrimativeType;
@@ -326,10 +326,12 @@ namespace NicoLib
                             case MeshFormat.FORMAT_STATIC_ODD:
                                 {
                                     float x = bs.ReadSingle(); float y = bs.ReadSingle(); float z = bs.ReadSingle(); _ = bs.ReadSingle();
-                                    ushort u = (ushort)bs.ReadUInt32(); ushort v = (ushort)bs.ReadUInt32(); _ = bs.ReadUInt32(); _ = bs.ReadUInt32();
+                                    short u = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current);
+                                    short v = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current); 
+                                    _ = bs.ReadUInt32(); _ = bs.ReadUInt32();
                                     byte r = (byte)bs.ReadUInt32(); byte g = (byte)bs.ReadUInt32(); byte b = (byte)bs.ReadUInt32(); byte a = (byte)bs.ReadUInt32();
                                     vertex.Position = new Vector3(x, y, z);
-                                    vertex.UV = new Vector2((float)u / ushort.MaxValue, (float)v / ushort.MaxValue);
+                                    vertex.UV = new Vector2((float)u / 4096, (float)v / 4096);
                                     // TODO: proper alpha handling
                                     vertex.Color = new Vector4((float)r / byte.MaxValue, (float)g / byte.MaxValue, (float)b / byte.MaxValue, (float)a / byte.MaxValue);
                                 }

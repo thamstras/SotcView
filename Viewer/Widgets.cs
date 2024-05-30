@@ -17,5 +17,23 @@ namespace Viewer
                 ImGui.TreePop();
             }
         }
+
+        public static void Window(string name, Action contents)
+        {
+            if (ImGui.Begin(name))
+            {
+                contents();
+            }
+            ImGui.End();
+        }
+
+        public static void Window(string name, ref bool isOpen, Action contents)
+        {
+            if (ImGui.Begin(name, ref isOpen))
+            {
+                contents();
+            }
+            ImGui.End();
+        }
     }
 }

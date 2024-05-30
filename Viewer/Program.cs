@@ -9,6 +9,9 @@ using Viewer.ImGUI;
 using NicoLib;
 using NicoLib.PS2;
 using Viewer.OGL;
+using System.Numerics;
+using Viewer.Graphics;
+using Image = Viewer.Graphics.Image;
 
 namespace Viewer
 {
@@ -28,18 +31,20 @@ namespace Viewer
         bool _requestOpen = true;
         bool _requestExit = false;
 
-        Xff? container = null;
-        Nmo? model = null;
-
         ShaderProgram? theShader = null;
         View? view = null;
-        StaticMesh? staticMesh = null;
-        List<StaticMesh> extraMeshes = new List<StaticMesh>();
+        List<(Nmo, StaticMesh)> loadedMeshes = new List<(Nmo, StaticMesh)>();
+        Box3D<float> meshBounds;
+        //GLStats stats;
+
+        Dictionary<string, (Nto, Image)> loadedImages = new Dictionary<string, (Nto, Image)>();
+        //float tviewScale = 1.0f;
 
         public Program()
         {
             var winOpts = WindowOptions.Default;
             winOpts.Title = "SoTC Viewer";
+            winOpts.Samples = 4;
             _Window = Window.Create(winOpts);
             _Window.Load += OnLoad;
             _Window.Update += OnUpdate;
@@ -67,6 +72,7 @@ namespace Viewer
             //_gl.Enable(EnableCap.CullFace);
             _gl.Enable(EnableCap.Multisample);
             _gl.Enable(EnableCap.LineSmooth);
+            _gl.Enable(EnableCap.Blend);
             _gl.BlendFuncSeparate(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha, BlendingFactor.One, BlendingFactor.One);
             _gl.ClearColor(0.2f, 0.3f, 0.3f, 1.0f);
             _gl.DepthFunc(DepthFunction.Lequal);
@@ -83,26 +89,34 @@ namespace Viewer
                 io.Fonts.AddFontFromFileTTF(".\\Resources\\Fonts\\Aldrich-Regular.ttf", 12.0f);
             });
 
-            var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.vert.glsl");
-            var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.frag.glsl");
+            var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.vert.glsl");
+            var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.frag.glsl");
             theShader = new ShaderProgram(_gl, vertShader, fragShader);
 
             view = new View();
             view.Resize(_Window.FramebufferSize.X, _Window.FramebufferSize.Y);
+
+            //stats = new GLStats(_gl);
         }
 
         private void OnMouseUp(IMouse mouse, MouseButton button)
         {
+            if (ImGui.GetIO().WantCaptureMouse)
+                return;
             view!.HandleMouseButton(mouse, button, false, _Input.Keyboards[0].IsKeyPressed(Key.ShiftLeft) | _Input.Keyboards[0].IsKeyPressed(Key.ShiftRight));
         }
 
         private void OnMouseDown(IMouse mouse, MouseButton button)
         {
+            if (ImGui.GetIO().WantCaptureMouse)
+                return;
             view!.HandleMouseButton(mouse, button, true, _Input.Keyboards[0].IsKeyPressed(Key.ShiftLeft) | _Input.Keyboards[0].IsKeyPressed(Key.ShiftRight));
         }
 
-        private void OnMouseMove(IMouse mouse, System.Numerics.Vector2 position)
+        private void OnMouseMove(IMouse mouse, Vector2 position)
         {
+            if (ImGui.GetIO().WantCaptureMouse)
+                return;
             view!.Mouse(position.X, position.Y);
         }
 
@@ -117,10 +131,10 @@ namespace Viewer
             if (_requestOpen)
             {
                 _requestOpen = false;
-                OpenFile(staticMesh != null);
+                OpenFile();
                 //TestFile();
-                staticMesh = StaticMeshExtensions.FromNMO(_gl, model);
-                view.Init(staticMesh.Bounds.Min.ToSystem(), staticMesh.Bounds.Max.ToSystem());
+                CalcMeshBounds();
+                view.Init(meshBounds.Min.ToSystem(), meshBounds.Max.ToSystem());
             }
 
             _ImGui.NewFrame();
@@ -130,47 +144,31 @@ namespace Viewer
 
             view!.Update((float)delta);
 
-            if (staticMesh != null)
+            DrawMainMenu();
+            if (ImGui.Begin("Debug View"))
             {
-                if (ImGui.Begin("Debug View"))
-                {
-                    ImGui.Text("Model");
-                    ImGui.Indent();
-                    ImGui.Text($"Min:    {staticMesh.Bounds.Min}");
-                    ImGui.Text($"Max:    {staticMesh.Bounds.Max}");
-                    ImGui.Text($"Center: {staticMesh.Bounds.Center}");
-                    ImGui.Unindent();
-                    ImGui.Text("View");
-                    ImGui.Indent();
-                    ImGui.Text($"Size:     {view.Size}");
-                    ImGui.Text($"Rotation: {view.Rotation}");
-                    ImGui.Text($"Zoom:     {view.Zoom}");
-                    ImGui.Text($"Center:   {view.Center}");
-                    ImGui.Text($"Scale:    {view.RadialScale}");
-                    ImGui.Text($"XY:       {view.XY}");
-                    ImGui.Text($"Transl:   {view.Translation}");
-                    ImGui.Unindent();
-                    ImGui.Text("GState");
-                    ImGui.Indent();
-                    ImGui.Text($"Model {view.GState.Model.Row1}");
-                    ImGui.Text($"      {view.GState.Model.Row2}");
-                    ImGui.Text($"      {view.GState.Model.Row3}");
-                    ImGui.Text($"      {view.GState.Model.Row4}");
-                    ImGui.Text("");
-                    ImGui.Text($"View  {view.GState.View.Row1}");
-                    ImGui.Text($"      {view.GState.View.Row2}");
-                    ImGui.Text($"      {view.GState.View.Row3}");
-                    ImGui.Text($"      {view.GState.View.Row4}");
-                    ImGui.Text("");
-                    ImGui.Text($"Proj  {view.GState.Projection.Row1}");
-                    ImGui.Text($"      {view.GState.Projection.Row2}");
-                    ImGui.Text($"      {view.GState.Projection.Row3}");
-                    ImGui.Text($"      {view.GState.Projection.Row4}");
-                    ImGui.Unindent();
-                    ImGui.Text($"FPS: {1.0 / delta}");
-                }
-                ImGui.End();
+                ImGui.Text("Model");
+                ImGui.Indent();
+                ImGui.Text($"Min:    {meshBounds.Min}");
+                ImGui.Text($"Max:    {meshBounds.Max}");
+                ImGui.Text($"Center: {meshBounds.Center}");
+                ImGui.Unindent();
+                ImGui.Text("View");
+                ImGui.Indent();
+                ImGui.Text($"Size:     {view.Size}");
+                ImGui.Text($"Rotation: {view.Rotation}");
+                ImGui.Text($"Zoom:     {view.Zoom}");
+                ImGui.Text($"Center:   {view.Center}");
+                ImGui.Text($"Scale:    {view.RadialScale}");
+                ImGui.Text($"XY:       {view.XY}");
+                ImGui.Text($"Transl:   {view.Translation}");
+                ImGui.Unindent();
+                ImGui.Text($"FPS: {1.0 / delta}");
+                //ImGui.Text($"Prims: {stats.LastValue}");
             }
+            ImGui.End();
+
+            DrawTextureList();
 
             //if (ImGui.Begin("NOTICE", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize))
             //{
@@ -183,11 +181,11 @@ namespace Viewer
         {
             _gl.Clear((uint)(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit));
 
-            DrawMainMenu();
+            //stats.BeginFrame();
 
             view!.Render();
 
-            if (staticMesh != null)
+            if (loadedMeshes.Count != 0)
             {
                 var modelLoc = theShader.GetUniformLocation("model");
                 var viewLoc = theShader.GetUniformLocation("view");
@@ -195,22 +193,23 @@ namespace Viewer
                 theShader.UseShader();
                 unsafe
                 {
-                    // TODO: These matricies are total bollocks
                     var modelMtx = view.GState.Model;
-                    //var modelMtx = Matrix4X4<float>.Identity;
-                    //var modelMtx = Matrix4X4.CreateScale(0.1f);
                     _gl.UniformMatrix4(modelLoc, 1, false, (float*)&modelMtx);
                     var viewMtx = view.GState.View;
-                    //var viewMtx = Matrix4X4.CreateLookAt(new Vector3D<float>(0.0f, 5.0f, -10.0f), Vector3D<float>.Zero, Vector3D<float>.UnitY);
                     _gl.UniformMatrix4(viewLoc, 1, false, (float*)&viewMtx);
                     var projMtx = view.GState.Projection;
-                    //var projMtx = Matrix4X4.CreatePerspectiveFieldOfView(Scalar.DegreesToRadians(45.0f), _Window.Size.X / _Window.Size.Y, 0.1f, 100.0f);
                     _gl.UniformMatrix4(projLoc, 1, false, (float*)&projMtx);
                 }
-                staticMesh.Draw();
-                foreach (var mesh in extraMeshes) mesh.Draw();
+                _gl.ActiveTexture(TextureUnit.Texture0);
+                _gl.Uniform1(theShader.GetUniformLocation("tex_diffuse"), 0);
+                foreach ((_, var mesh) in loadedMeshes)
+                {
+                    mesh.Draw();
+                }
 
             }
+
+            //stats.EndFrame();
 
             _ImGui.Render();
         }
@@ -223,6 +222,9 @@ namespace Viewer
 
         private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
         {
+            if (ImGui.GetIO().WantCaptureKeyboard)
+                return;
+
             if (key == Key.Escape)
             {
                _Window.Close();
@@ -236,6 +238,10 @@ namespace Viewer
 
         private void OnClose()
         {
+            foreach ((_, var mesh) in loadedMeshes)
+                mesh.Dispose();
+            foreach ((_, (_, var img)) in loadedImages)
+                img.Dispose();
             _ImGui?.Dispose();
             _Input?.Dispose();
             _gl?.Dispose();
@@ -269,65 +275,143 @@ namespace Viewer
             }
         }
 
-        void OpenFile(bool multi = false)
+        void OpenFile()
         {
-            using (System.Windows.Forms.OpenFileDialog ofd = new System.Windows.Forms.OpenFileDialog())
+            using (OpenFileDialog ofd = new OpenFileDialog())
             {
                 ofd.RestoreDirectory = true;
                 ofd.AddToRecent = false;
-                if (multi)
-                    ofd.Multiselect = true;
+                ofd.Multiselect = true;
                 if (ofd.ShowDialog() == DialogResult.OK)
                 {
-                    if (!multi)
+                    foreach (var filePath in ofd.FileNames)
                     {
-                        string filePath = ofd.FileName;
-                        var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                        try
+                        var ext = Path.GetExtension(filePath);
+                        if (ext == ".nmo")
                         {
-                            container = Xff.Read(fs);
+                            LoadNMO(filePath);
                         }
-                        catch (Exception ex)
+                        else if (ext == ".nto")
                         {
-                            Console.WriteLine(ex.Message);
-                        }
-                        if (container == null)
-                            return;
-                        try
-                        {
-                            model = Nmo.FromXff(container);
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine(ex.Message);
-                        }
-                    }
-                    else
-                    {
-                        foreach (var filePath in ofd.FileNames)
-                        {
-                            try
-                            {
-                                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-                                var xff = Xff.Read(fs);
-                                if (xff == null)
-                                    continue;
-                                var nmo = Nmo.FromXff(xff);
-                                if (nmo == null)
-                                    continue;
-                                var sm = StaticMeshExtensions.FromNMO(_gl, nmo);
-                                if (sm == null)
-                                    continue;
-                                extraMeshes.Add(sm);
-                            }
-                            catch (Exception ex)
-                            {
-                                Console.WriteLine($"Fault Reading {filePath} : {ex.Message}");
-                                continue;
-                            }
+                            LoadNTO(filePath);
                         }
                     }
                 }
+            }
+        }
+
+        private void LoadNTO(string filePath)
+        {
+            try
+            {
+                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                var xff = Xff.Read(fs);
+                if (xff == null)
+                    return;
+                var nto = Nto.FromXff(xff);
+                if (nto == null)
+                    return;
+                var img = new Image(_gl, nto.Name, nto.Width, nto.Height, nto.PixelData);
+                loadedImages.Add(Path.GetFileNameWithoutExtension(filePath), (nto, img));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Fault Reading {filePath} : {ex.Message}");
+                return;
+            }
+
+        }
+
+        private void LoadNMO(string filePath)
+        {
+            try
+            {
+                var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+                var xff = Xff.Read(fs);
+                if (xff == null)
+                    return;
+                var nmo = Nmo.FromXff(xff);
+                if (nmo == null)
+                    return;
+                var sm = StaticMeshExtensions.FromNMO(_gl, nmo);
+                if (sm == null)
+                    return;
+                loadedMeshes.Add((nmo, sm));
+
+                foreach(var tName in sm.Textures.Except(loadedImages.Keys))
+                {
+                    var newPath = Path.Combine(Path.GetDirectoryName(filePath), "..", "nto", $"{tName}.nto");
+                    if (File.Exists(newPath))
+                        LoadNTO(newPath);
+                }
+                sm.LinkTextures(loadedImages);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Fault Reading {filePath} : {ex.Message}");
+                return;
+            }
+        }
+
+        void CalcMeshBounds()
+        {
+            if (loadedMeshes.Count == 0)
+            {
+                meshBounds = new Box3D<float>();
+                return;
+            }
+
+            Vector3D<float> min = loadedMeshes[0].Item2.Bounds.Min;
+            Vector3D<float> max = loadedMeshes[0].Item2.Bounds.Max;
+            for (int i = 1; i < loadedMeshes.Count; i++)
+            {
+                min = Vector3D.Min(min, loadedMeshes[i].Item2.Bounds.Min);
+                max = Vector3D.Max(max, loadedMeshes[i].Item2.Bounds.Max);
+            }
+
+            meshBounds = new Box3D<float>(min, max);
+        }
+
+        bool showTextureViewer = false;
+        Image? textureViewerImage = null;
+        float textureViewerZoom = 1.0f;
+
+        void DrawTextureList()
+        {
+            Widgets.Window("Textures", () =>
+            {
+                ImGui.Text($"Loaded textures: {loadedImages.Count}");
+                foreach ((string name, (Nto nto, Image img)) in loadedImages)
+                {
+                    Widgets.TreeNode(name, () =>
+                    {
+                        ImGui.Text($"Width:  {img.Width}");
+                        ImGui.Text($"Height: {img.Height}");
+                        if (ImGui.Button("Preview"))
+                        {
+                            textureViewerImage = img;
+                            textureViewerZoom = 1.0f;
+                            showTextureViewer = true;
+                        }
+                    });
+                }
+            });
+
+            if (showTextureViewer && textureViewerImage != null)
+            {
+                Widgets.Window("Texture Viewer", ref showTextureViewer, () =>
+                {
+                    ImGui.Text(textureViewerImage.Name);
+                    unsafe
+                    {
+                        fixed (float* pf = &textureViewerZoom)
+                        {
+                            ImGui.DragScalar("Scale", ImGuiDataType.Float, (nint)pf);
+                        }
+                    }
+                    ImGui.Image((nint)textureViewerImage.Texture._handle,
+                        new Vector2(textureViewerImage.Width * textureViewerZoom, textureViewerImage.Height * textureViewerZoom));
+                });
             }
         }
 

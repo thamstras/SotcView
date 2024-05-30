@@ -8,7 +8,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Viewer
+namespace Viewer.Graphics
 {
     public struct DrawCmd
     {
@@ -43,7 +43,8 @@ namespace Viewer
         private bool built = false;
         private OGL.Buffer<float>? VBO = null;
         private OGL.VertexArray? VAO = null;
-        private List<Texture?> oglTextures = new List<Texture?>();
+        private List<OGL.Texture> oglTextures = new List<OGL.Texture>();
+        private static OGL.Texture? dummyTexture = null;
         public Box3D<float> Bounds { get; private set; }
 
         public StaticMesh(GL gl)
@@ -94,10 +95,10 @@ namespace Viewer
             VBO = new OGL.Buffer<float>(_gl, BufferTargetARB.ArrayBuffer, CollectionsMarshal.AsSpan(vertexData), VertexBufferObjectUsage.StaticDraw);
 
             VAO.BindVertexBuffer(0, VBO, 0, 13 * sizeof(float));
-            
+
             VAO.SetAttribBinding(0, 0); // Position
             VAO.SetAttribFormat(0, 3, VertexAttribType.Float, false, 0 * sizeof(float));
-            
+
             VAO.SetAttribBinding(1, 0); // Normal
             VAO.SetAttribFormat(1, 4, VertexAttribType.Float, false, 3 * sizeof(float));
 
@@ -110,6 +111,29 @@ namespace Viewer
             built = true;
         }
 
+        internal void LinkTextures(Dictionary<string, (Nto, Image)> texDict)
+        {
+            oglTextures.EnsureCapacity(Textures.Count);
+            for (int i = 0; i < Textures.Count; i++)
+            {
+                if (texDict.TryGetValue(Textures[i], out var pair))
+                {
+                    oglTextures.Insert(i, pair.Item2.Texture);
+                }
+            }
+
+            if (dummyTexture == null)
+                CreateDummyTexture();
+        }
+
+        private void CreateDummyTexture()
+        {
+            byte[] bytes = [0xff, 0xff, 0xff, 0x80];
+            dummyTexture = new OGL.Texture(_gl, TextureTarget.Texture2D);
+            dummyTexture.AllocStorage(1, 1, SizedInternalFormat.Rgba8);
+            dummyTexture.Upload(1, 1, PixelFormat.Rgba, bytes);
+        }
+
         // NOTE: assumes shader + uniforms are set beforehand
         public void Draw()
         {
@@ -120,17 +144,24 @@ namespace Viewer
             int runningOffset = 0;
             foreach (var subMesh in SubMeshes)
             {
-                // TODO: texture handling
+                if (oglTextures.Count > subMesh.TextureIdx
+                    && oglTextures[subMesh.TextureIdx] != null)
+                    oglTextures[subMesh.TextureIdx].Bind(0);
+                else
+                    dummyTexture?.Bind(0);
 
                 foreach (var drawCmd in subMesh.DrawCmds)
                 {
-                    //if (drawCmd.twoSided)
+                    //if (!drawCmd.twoSided)
+                    //    continue;
+                    //    _gl.DepthMask(false);
                     //    _gl.Disable(EnableCap.CullFace);
                     // TODO: This should really be a glMultiDrawArrays call...
                     // TODO: THAT should really be a glMultiDrawArraysIndirect call...
                     _gl.DrawArrays(drawCmd.prim, sectionOffset + drawCmd.start, (uint)drawCmd.count);
                     runningOffset += drawCmd.count;
                     //if (drawCmd.twoSided)
+                    //    _gl.DepthMask(true);
                     //    _gl.Enable(EnableCap.CullFace);
                 }
                 sectionOffset = runningOffset;
@@ -178,8 +209,9 @@ namespace Viewer
                     {
                         start = start,
                         count = count,
-                        prim = PrimitiveType.TriangleStrip,
-                        twoSided = strip.PrimativeType == Nmo.Primative.PRIMATIVE_TRIANGLE_STRIP_TWO_SIDED
+                        // todo: this is still wrong and i don't know what it should be
+                        prim = strip.PrimativeType == Nmo.Primative.PRIMATIVE_TRIANGLE_STRIP ? PrimitiveType.TriangleStrip : PrimitiveType.Triangles,
+                        twoSided = strip.PrimativeType == Nmo.Primative.PRIMATIVE_TRIANGLES
                     });
                 }
                 mesh.SubMeshes.Add(subMesh);
