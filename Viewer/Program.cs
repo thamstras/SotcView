@@ -172,6 +172,7 @@ namespace Viewer
 
             DrawTextureList();
             DrawModelList();
+            DrawExportWindow();
 
             //if (ImGui.Begin("NOTICE", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize))
             //{
@@ -264,6 +265,10 @@ namespace Viewer
                     if (ImGui.MenuItem("Open..."))
                     {
                         _requestOpen = true;
+                    }
+                    if (ImGui.MenuItem("Export..."))
+                    {
+                        ShowExportWindow();
                     }
                     ImGui.Separator();
                     if (ImGui.MenuItem("Exit"))
@@ -508,6 +513,70 @@ namespace Viewer
                     });
                 });
             }
+        }
+
+        string exportSelectedMeshName = string.Empty;
+        string exportFilePath = string.Empty;
+        string exportTextureFolder = string.Empty;
+        Exporter.FormatDescription exportFormat;
+        Exporter? exporter = null;
+        bool showExportWindow = false;
+
+        void ShowExportWindow()
+        {
+            showExportWindow = true;
+            exporter ??= new Exporter();
+            exportFormat = exporter.GetExportFormats()[0];
+            exportSelectedMeshName = loadedMeshes[0].Item1.ModelName;
+        }
+
+        void DrawExportWindow()
+        {
+            if (showExportWindow && exporter != null)
+            {
+                Widgets.Window("Export Options", ref showExportWindow, () =>
+                {
+                    if (ImGui.BeginCombo("Export mesh", exportSelectedMeshName))
+                    {
+                        foreach ((Nmo nmo, _) in loadedMeshes)
+                        {
+                            if (ImGui.Selectable(nmo.ModelName, nmo.ModelName == exportSelectedMeshName))
+                                exportSelectedMeshName = nmo.ModelName;
+                        }
+                        ImGui.EndCombo();
+                    }
+                    ImGui.InputText("File Path", ref exportFilePath, 255);
+                    ImGui.SameLine();
+                    ImGui.Button("Select");
+                    ImGui.InputText("Texture Folder", ref exportTextureFolder, 255);
+                    ImGui.SameLine();
+                    ImGui.Button("Select");
+                    if (ImGui.BeginCombo("Export Format", exportFormat.Description))
+                    {
+                        foreach (var format in exporter.GetExportFormats())
+                        {
+                            if (ImGui.Selectable(format.Description, format.ID == exportFormat.ID))
+                                exportFormat = format;
+                        }
+                        ImGui.EndCombo();
+                    }
+                    if (ImGui.Button("Export"))
+                        DoExport();
+                });
+            }
+        }
+
+        void DoExport()
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(exportFilePath));
+            Directory.CreateDirectory(exportTextureFolder);
+            Nmo exportMesh = loadedMeshes.Find(m => m.Item1.ModelName == exportSelectedMeshName).Item1;
+            foreach (var tex in exportMesh.Textures)
+            {
+                if (loadedImages.TryGetValue(tex.Name, out var image))
+                    exporter.ExportTexture(image.Item1, Path.Combine(exportTextureFolder, $"{tex.Name}.png"));
+            }
+            exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, exportTextureFolder);
         }
 
         //void TestFile()
