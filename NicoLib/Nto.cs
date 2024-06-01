@@ -9,6 +9,8 @@ namespace NicoLib
 {
     public class Nto
     {
+        // TODO: Should probably move to storing the original header/pixels/pal in here and leave the decoding to the image conversion
+        //       No rush though, doesn't look like there's much interesting in the rest of the header...
         public Nto(string name, int width, int height, byte[] pixelData)
         {
             Name = name;
@@ -35,6 +37,7 @@ namespace NicoLib
             [Data] public byte Mipmaps { get; set; }
             [Data] public byte WH { get; set; }
             [Data] public byte Swizz { get; set; }
+            [Data(Count = 36)] public UInt32[] Extra { get; set; }
         }
 
         enum PixelMode

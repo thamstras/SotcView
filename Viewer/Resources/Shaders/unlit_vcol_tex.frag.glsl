@@ -1,6 +1,7 @@
 #version 330
 
 uniform sampler2D tex_diffuse;
+//uniform vec4 tint;
 //uniform vec4 fog_color;
 //uniform float fog_near;
 //uniform float fog_far;

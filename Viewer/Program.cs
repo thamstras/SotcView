@@ -89,6 +89,8 @@ namespace Viewer
                 io.Fonts.AddFontFromFileTTF(".\\Resources\\Fonts\\Aldrich-Regular.ttf", 12.0f);
             });
 
+            //var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.vert.glsl");
+            //var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.frag.glsl");
             var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.vert.glsl");
             var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.frag.glsl");
             theShader = new ShaderProgram(_gl, vertShader, fragShader);
@@ -169,6 +171,7 @@ namespace Viewer
             ImGui.End();
 
             DrawTextureList();
+            DrawModelList();
 
             //if (ImGui.Begin("NOTICE", ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoResize))
             //{
@@ -204,7 +207,7 @@ namespace Viewer
                 _gl.Uniform1(theShader.GetUniformLocation("tex_diffuse"), 0);
                 foreach ((_, var mesh) in loadedMeshes)
                 {
-                    mesh.Draw();
+                    mesh.Draw(theShader);
                 }
 
             }
@@ -411,6 +414,98 @@ namespace Viewer
                     }
                     ImGui.Image((nint)textureViewerImage.Texture._handle,
                         new Vector2(textureViewerImage.Width * textureViewerZoom, textureViewerImage.Height * textureViewerZoom));
+                });
+            }
+        }
+
+        bool showModelDetail = false;
+        Nmo? selectedModel = null;
+
+        void DrawModelList()
+        {
+            Widgets.Window("Models", () =>
+            {
+                ImGui.Text($"Loaded Models: {loadedMeshes.Count}");
+                foreach ((Nmo nmo, StaticMesh sm) in loadedMeshes)
+                {
+                    Widgets.TreeNode(nmo.ModelName, () =>
+                    {
+                        ImGui.Text($"TEX count: {nmo.Textures.Count}");
+                        ImGui.Text($"SURF count: {nmo.Surfaces.Count}");
+                        ImGui.Text($"DMA count: {nmo.Meshes.Count}");
+                        if (ImGui.Button("Detail"))
+                        {
+                            selectedModel = nmo;
+                            showModelDetail = true;
+                        }
+                    });
+                }
+            });
+
+            if (showModelDetail && selectedModel != null)
+            {
+                Widgets.Window("Model Detail", ref showModelDetail, () =>
+                {
+                    ImGui.Text($"Current: {selectedModel.ModelName}");
+                    Widgets.TreeNode("Header", () =>
+                    {
+                        var hdr = selectedModel.Header;
+                        ImGui.Text($"{hdr.Ident:X4} {hdr.Unk_04:X4} {hdr.Unk_08:X4} {hdr.Unk_0C:X4}");
+                        ImGui.Text($"{hdr.Unk_10:X4} {hdr.Unk_14:X4} {hdr.Unk_18:X4} {hdr.Unk_1C:X4}");
+                        ImGui.Text($"{hdr.Unk_20:F4} {hdr.Unk_24:F4} {hdr.Unk_28:F4} {hdr.Unk_2C:F4}");
+                    });
+                    Widgets.TreeNode("Chunk Info", () =>
+                    {
+                        var chnk = selectedModel.ChunkInfo;
+                        ImGui.Text($"BOX  {chnk[0].Offset:X4} {chnk[0].Count:G4} {chnk[0].Unk_08:X4} {chnk[0].Unk_0C:X4}");
+                        ImGui.Text($"TEX  {chnk[1].Offset:X4} {chnk[1].Count:G4} {chnk[1].Unk_08:X4} {chnk[1].Unk_0C:X4}");
+                        ImGui.Text($"SURF {chnk[2].Offset:X4} {chnk[2].Count:G4} {chnk[2].Unk_08:X4} {chnk[2].Unk_0C:X4}");
+                        ImGui.Text($"VIF  {chnk[3].Offset:X4} {chnk[3].Count:G4} {chnk[3].Unk_08:X4} {chnk[3].Unk_0C:X4}");
+                        ImGui.Text($"NAME {chnk[4].Offset:X4} {chnk[4].Count:G4} {chnk[4].Unk_08:X4} {chnk[4].Unk_0C:X4}");
+                    });
+                    Widgets.TreeNode("Unknown Chunks", () =>
+                    {
+                        var chunk = selectedModel.Boxes[0];
+                        ImGui.Text("Note: count of this chunk type is currently unknown, only first shown.");
+                        ImGui.Text($"{chunk.X1:F4} {chunk.Y1:F4} {chunk.Z1:F4} {chunk.W1:F4}");
+                        ImGui.Text($"{chunk.X2:F4} {chunk.Y2:F4} {chunk.Z2:F4} {chunk.W2:F4}");
+                        ImGui.Text($"{chunk.Left:G4} {chunk.Right:G4} {chunk.C:G4} {chunk.D:G4}");
+                    });
+                    Widgets.TreeNode("TEX Chunks", () =>
+                    {
+                        for (int i = 0; i < selectedModel.Textures.Count; i++)
+                        {
+                            Nmo.ChunkTEX tex = selectedModel.Textures[i];
+                            Widgets.TreeNode($"{i} [{tex.Name}]", () =>
+                            {
+                                ImGui.Text($"Nums: {tex.Nums[0]} {tex.Nums[1]} {tex.Nums[2]} {tex.Nums[3]}");
+                                ImGui.Text($"Shorts: {tex.Shorts[0]} {tex.Shorts[1]}");
+                                ImGui.Text($"Width: {tex.Width} Height: {tex.Height}");
+                            });
+                        }
+                    });
+                    Widgets.TreeNode("SURF Chunks", () =>
+                    {
+                        for (int i = 0; i < selectedModel.Surfaces.Count; i++)
+                        {
+                            Nmo.ChunkSURF surf = selectedModel.Surfaces[i];
+                            Widgets.TreeNode($"{i} [{surf.Name}]", () =>
+                            {
+                                ImGui.Text($"Tris: {surf.Tricount} Strips: {surf.Stripcount}");
+                                ImGui.Text($"Layers:");
+                                ImGui.Indent();
+                                ImGui.Text($"{surf.MaybeTint[0]:X} {surf.MaybeTint[1]:X} {surf.MaybeTint[2]:X} {surf.MaybeTint[3]:X}  {surf.MeshFormat:X} {surf.UnkFlag1:X} {surf.UnkFlag2:X} {surf.UnkFlag3:X} {surf.UnkInt}");
+                                ImGui.Text($"{surf.Hdr1[0].Zero[0]:X} {surf.Hdr1[0].Zero[1]:X} {surf.Hdr1[0].Zero[2]:X} {surf.Hdr1[0].Zero[3]:X}  {surf.Hdr1[0].One} {surf.Hdr1[0].Two:X} {surf.Hdr1[0].Three}");
+                                ImGui.Text($"{surf.Hdr1[1].Zero[0]:X} {surf.Hdr1[1].Zero[1]:X} {surf.Hdr1[1].Zero[2]:X} {surf.Hdr1[1].Zero[3]:X}  {surf.Hdr1[1].One} {surf.Hdr1[1].Two:X} {surf.Hdr1[1].Three}");
+                                ImGui.Unindent();
+                                ImGui.Text($"Two:");
+                                ImGui.Indent();
+                                ImGui.Text($"{surf.Hdr2.Zero} {surf.Hdr2.One} {surf.Hdr2.Two} {surf.Hdr2.Three[0]}");
+                                ImGui.Text($"{surf.Hdr2.Three[1]} {surf.Hdr2.Three[2]} {surf.Hdr2.Three[3]} {surf.Hdr2.Three[4]}");
+                                ImGui.Unindent();
+                            });
+                        }
+                    });
                 });
             }
         }

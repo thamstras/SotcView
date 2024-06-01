@@ -4,6 +4,7 @@ using Silk.NET.OpenGL;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -28,14 +29,22 @@ namespace Viewer.Graphics
 
     public class SubMesh
     {
-        public int TextureIdx { get; set; }
+        public int MaterialIndex { get; set; }
         public List<Vertex> Vertices { get; set; } = new List<Vertex>();
         public List<DrawCmd> DrawCmds { get; set; } = new List<DrawCmd>();
+    }
+
+    public class Material
+    {
+        public string Name { get; set; }
+        //public Vector4 TintColor { get; set; }
+        public int TextureIndex { get; set; }
     }
 
     public class StaticMesh : IDisposable
     {
         public List<string> Textures { get; set; } = new List<string>();
+        public List<Material> Materials { get; set; } = new List<Material>();
         public List<SubMesh> SubMeshes { get; set; } = new List<SubMesh>();
 
         private readonly GL _gl;
@@ -43,7 +52,7 @@ namespace Viewer.Graphics
         private bool built = false;
         private OGL.Buffer<float>? VBO = null;
         private OGL.VertexArray? VAO = null;
-        private List<OGL.Texture> oglTextures = new List<OGL.Texture>();
+        private List<OGL.Texture?> oglTextures = new List<OGL.Texture?>();
         private static OGL.Texture? dummyTexture = null;
         public Box3D<float> Bounds { get; private set; }
 
@@ -113,12 +122,16 @@ namespace Viewer.Graphics
 
         internal void LinkTextures(Dictionary<string, (Nto, Image)> texDict)
         {
-            oglTextures.EnsureCapacity(Textures.Count);
+            oglTextures = new(Textures.Count);
             for (int i = 0; i < Textures.Count; i++)
             {
                 if (texDict.TryGetValue(Textures[i], out var pair))
                 {
-                    oglTextures.Insert(i, pair.Item2.Texture);
+                    oglTextures.Add(pair.Item2.Texture);
+                }
+                else
+                {
+                    oglTextures.Add(null);
                 }
             }
 
@@ -135,7 +148,7 @@ namespace Viewer.Graphics
         }
 
         // NOTE: assumes shader + uniforms are set beforehand
-        public void Draw()
+        public void Draw(OGL.ShaderProgram shader)
         {
             if (!built) return;
 
@@ -144,11 +157,13 @@ namespace Viewer.Graphics
             int runningOffset = 0;
             foreach (var subMesh in SubMeshes)
             {
-                if (oglTextures.Count > subMesh.TextureIdx
-                    && oglTextures[subMesh.TextureIdx] != null)
-                    oglTextures[subMesh.TextureIdx].Bind(0);
+                Material mat = Materials[subMesh.MaterialIndex];
+                if (oglTextures[mat.TextureIndex] != null)
+                    oglTextures[mat.TextureIndex].Bind(0);
                 else
                     dummyTexture?.Bind(0);
+
+                //_gl.Uniform4(shader.GetUniformLocation("tint"), mat.TintColor);
 
                 foreach (var drawCmd in subMesh.DrawCmds)
                 {
@@ -189,16 +204,26 @@ namespace Viewer.Graphics
                 mesh.Textures.Add(tex.Name);
             }
 
+            foreach (var surf in nmo.Surfaces)
+            {
+                mesh.Materials.Add(new Material()
+                {
+                    Name = surf.Name,
+                    TextureIndex = (int)surf.Hdr1[0].Three,
+                    //TintColor = new Vector4(surf.MaybeTint[0] / 255.0f, surf.MaybeTint[1] / 255.0f, surf.MaybeTint[2] / 255.0f, surf.MaybeTint[3] / 255.0f)
+                });
+            }
+
             for (int i = 0; i < nmo.Meshes.Count; i++)
             {
                 Nmo.ChunkVIF chunk = nmo.Meshes[i];
+                //Nmo.ChunkSURF surf = nmo.Surfaces[(int)chunk.surf];
                 List<Nmo.TriStrip> geom = nmo.ReadVifPacket(chunk);
-                Nmo.ChunkSURF surf = nmo.Materials[(int)chunk.surf];
 
                 // TODO: Merge SubMeshes with the same texture
                 // TODO: glDrawMultiArrays
                 SubMesh subMesh = new SubMesh();
-                subMesh.TextureIdx = (int)surf.Hdr1[1].Three;
+                subMesh.MaterialIndex = (int)chunk.surf;
                 foreach (var strip in geom)
                 {
                     var start = subMesh.Vertices.Count;

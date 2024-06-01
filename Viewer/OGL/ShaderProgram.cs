@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 namespace Viewer.OGL
 {
     // TODO: This is lifted stright from SILK's ImGui module. I'm not thrilled with it but it'll do for now.
-    internal class ShaderProgram : IDisposable
+    public class ShaderProgram : IDisposable
     {
         private readonly GL _gl;
         private (ShaderType Type, string Path)[] _files;

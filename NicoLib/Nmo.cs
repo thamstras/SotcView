@@ -35,7 +35,7 @@ namespace NicoLib
             [Data] public UInt32 Unk_0C { get; set; }
         }
 
-        public class ChunkZero
+        public class ChunkBox
         {
             [Data] public float X1 { get; set; }
             [Data] public float Y1 { get; set; }
@@ -45,8 +45,8 @@ namespace NicoLib
             [Data] public float Y2 { get; set; }
             [Data] public float Z2 { get; set; }
             [Data] public float W2 { get; set; }
-            [Data] public int A { get; set; }
-            [Data] public int B { get; set; }
+            [Data] public int Left { get; set; }
+            [Data] public int Right { get; set; }
             [Data] public int C { get; set; }
             [Data] public int D { get; set; }
         }
@@ -55,8 +55,8 @@ namespace NicoLib
         {
             [Data] public UInt32 Sig { get; set; }
             [Data] public UInt32 Name_off { get; set; }
-            [Data(Count = 4)] public UInt32[] Nums { get; set; }
-            [Data(Count = 2)] public UInt16[] Shorts { get; set; }
+            [Data(Count = 4)] public UInt32[] Nums { get; set; }    // Only the last one seems to be used. Some kind of flag?
+            [Data(Count = 2)] public UInt16[] Shorts { get; set; }  // 0: index, 1: some kind of flag
             [Data] public UInt16 Width { get; set; }
             [Data] public UInt16 Height { get; set; }
 
@@ -85,7 +85,14 @@ namespace NicoLib
             [Data] public UInt32 Tricount { get; set; }
             [Data] public UInt32 Stripcount { get; set; }
             [Data] public UInt32 Name_off { get; set; }
-            [Data(Count = 3)] public Header1[] Hdr1 { get; set; }
+            [Data(Count =4)] public byte[] MaybeTint { get; set; }
+            [Data] public float MaybeAlpha { get; set; }
+            [Data] public byte MeshFormat { get; set; }
+            [Data] public byte UnkFlag1 { get; set; }
+            [Data] public byte UnkFlag2 { get; set; }
+            [Data] public byte UnkFlag3 { get; set; }
+            [Data] public UInt32 UnkInt { get; set; }
+            [Data(Count = 2)] public Header1[] Hdr1 { get; set; }
             [Data] public Header2 Hdr2 { get; set; }
             [Data(Count = 48)] public UInt32[] Hdr3 { get; set; }
 
@@ -108,7 +115,7 @@ namespace NicoLib
 
         enum NmoChunkType
         {
-            CHUNK_UNKNOWN = 0,
+            CHUNK_BOX = 0,
             CHUNK_TEX = 1,
             CHUNK_SURF = 2,
             CHUNK_VIF = 3,
@@ -117,19 +124,19 @@ namespace NicoLib
 
         public FileHeader Header { get; set; }
         public List<ChunkDef> ChunkInfo { get; set; }
-        public ChunkZero UnknownChunk { get; set; }
+        public List<ChunkBox> Boxes { get; set; }
         public List<ChunkTEX> Textures { get; set; }
-        public List<ChunkSURF> Materials { get; set; }
+        public List<ChunkSURF> Surfaces { get; set; }
         public List<ChunkVIF> Meshes { get; set; }
         public string ModelName { get; set; }
 
-        public Nmo(FileHeader header, List<ChunkDef> chunkInfo, ChunkZero unknownChunk, List<ChunkTEX> textures, List<ChunkSURF> materials, List<ChunkVIF> meshes, string modelName)
+        public Nmo(FileHeader header, List<ChunkDef> chunkInfo, List<ChunkBox> boxes, List<ChunkTEX> textures, List<ChunkSURF> materials, List<ChunkVIF> meshes, string modelName)
         {
             Header = header;
             ChunkInfo = chunkInfo;
-            UnknownChunk = unknownChunk;
+            Boxes = boxes;
             Textures = textures;
-            Materials = materials;
+            Surfaces = materials;
             Meshes = meshes;
             ModelName = modelName;
         }
@@ -150,7 +157,20 @@ namespace NicoLib
 
             reader.Seek(chunkDefs[0].Offset);
             // Note: Count is unknown, so we only read the first one.
-            ChunkZero chunkZero = BinaryMapping.ReadObject<ChunkZero>(stream);
+            //ChunkBox chunkZero = BinaryMapping.ReadObject<ChunkBox>(stream);
+            List<ChunkBox> boxes = new List<ChunkBox>();
+            int maxSeen = 0;
+            do
+            {
+                var box = BinaryMapping.ReadObject<ChunkBox>(stream);
+                boxes.Add(box);
+                if (box.Left != -1)
+                    maxSeen = Math.Max(maxSeen, box.Left);
+                if (box.Right != -1)
+                    maxSeen = Math.Max(maxSeen, box.Right);
+                
+            }
+            while (boxes.Count <= maxSeen);
 
             reader.Seek(chunkDefs[1].Offset);
             List<ChunkTEX> tex_list = new List<ChunkTEX>();
@@ -188,7 +208,7 @@ namespace NicoLib
                 count.Data = reader.ReadBytes((int)count.size);
             }
 
-            return new Nmo(header, chunkDefs, chunkZero, tex_list, surfs, counts, modelName);
+            return new Nmo(header, chunkDefs, boxes, tex_list, surfs, counts, modelName);
         }
 
         public enum Primative : byte
@@ -230,9 +250,9 @@ namespace NicoLib
             [Data] public ushort Unk_02 { get; set; }   // 0x0000
             [Data] public ushort Unk_04 { get; set; }   // 0x4000
             [Data] public byte Unk_06 { get; set; }   // 0x3E
-            [Data] public Primative PrimativeType { get; set; }
+            [Data] public Primative PrimativeType { get; set; } // Maybe not primative type
             [Data] public uint Unk_08 { get; set; }     // 0x00000412
-            [Data] public MeshFormat Format { get; set; }
+            [Data] public MeshFormat Format { get; set; }   // Maybe not format
             [Data] public ushort Unk_0E { get; set; }   // 0x00
         }
 
@@ -254,12 +274,35 @@ namespace NicoLib
         }
 
         // TODO: The vertex processing might be better off in a separate class
+        static bool firstOddOne = true;
         public List<TriStrip> ReadVifPacket(ChunkVIF chunk)
         {
+            ChunkSURF surf = Surfaces[(int)chunk.surf];
+            //if (chunk.unk_04 != 0 || chunk.unk_0c != 3 || chunk.unk_1c != 0)
+            //    Console.WriteLine($"GOT ONE! {chunk.unk_04} {chunk.unk_0c} {chunk.unk_1c}");
+
+            var format = surf.MeshFormat;
+            if (format != 0x86 && format != 0x97)
+                throw new Exception($"Unknown surf format {format:X}");
+
+            bool readPos = false, readNormal = false, readUV = false, readColor = false;
+            if (format == 0x86)
+            {
+                readPos = true;
+                readUV = true;
+                readColor = true;
+            }
+            else if (format == 0x97)
+            {
+                readPos = true;
+                readNormal = true;
+                readUV = true;
+                readColor = true;
+            }
+
             List<TriStrip> strips = new List<TriStrip>();
             VifProcessor vif = new VifProcessor(chunk.Data);
             bool done = false;
-            //while (vif.Run() == VifProcessor.State.Microprogram)
             do
             {
                 var vifState = vif.Run();
@@ -276,30 +319,23 @@ namespace NicoLib
 
                     VifHeader header = BinaryMapping.ReadObject<VifHeader>(ms);
 
-                    if (header.Unk_01 != 0x80
-                        || header.Unk_02 != 0x0000
-                        || header.Unk_04 != 0x4000
-                        || header.Unk_06 != 0x3E
-                        //|| header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP
-                        || header.Unk_08 != 0x00000412
-                        || header.Unk_0E != 0x0000)
-                    {
-                        Console.WriteLine("     | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F");
-                        Console.WriteLine("-----|------------------------------------------------");
-                        //int addr = 0;
-                        for (int addr = 0; addr < 0x10 + (0x32 * 0x30); addr += 0x10)
-                        {
-                            Console.WriteLine($"{addr:X4} | {vif.Memory[addr + 0]:X2} {vif.Memory[addr + 1]:X2} {vif.Memory[addr + 2]:X2} {vif.Memory[addr + 3]:X2} " +
-                                $"{vif.Memory[addr + 4]:X2} {vif.Memory[addr + 5]:X2} {vif.Memory[addr + 6]:X2} {vif.Memory[addr + 7]:X2} " +
-                                $"{vif.Memory[addr + 8]:X2} {vif.Memory[addr + 9]:X2} {vif.Memory[addr + 10]:X2} {vif.Memory[addr + 11]:X2} " +
-                                $"{vif.Memory[addr + 12]:X2} {vif.Memory[addr + 13]:X2} {vif.Memory[addr + 14]:X2} {vif.Memory[addr + 15]:X2}");
-                        }
-                        throw new Exception($"Header fault expected: [XX 80 0000 4000 3E 30 00000412 XXXX 0000] but was [{header.Vert_count:X2} {header.Unk_01:X2} {header.Unk_04:X2} {header.Unk_06:X} {(byte)header.PrimativeType:X} {header.Unk_08:X8} {(ushort)header.Format:X4} {header.Unk_0E:X4}]");
-                    }
+                    //if (header.Unk_01 != 0x80
+                    //    || header.Unk_02 != 0x0000
+                    //    || header.Unk_04 != 0x4000
+                    //    || header.Unk_06 != 0x3E
+                    //    //|| header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP
+                    //    || header.Unk_08 != 0x00000412
+                    //    || header.Unk_0E != 0x0000)
+                    //if (header.PrimativeType == Primative.PRIMATIVE_TRIANGLES && firstOddOne)
+                    //{
+                    //    PrintVifMem(vif, header);
+                    //    firstOddOne = false;
+                    //    //throw new Exception($"Header fault expected: [XX 80 0000 4000 3E 30 00000412 XXXX 0000] but was [{header.Vert_count:X2} {header.Unk_01:X2} {header.Unk_04:X2} {header.Unk_06:X} {(byte)header.PrimativeType:X} {header.Unk_08:X8} {(ushort)header.Format:X4} {header.Unk_0E:X4}]");
+                    //}
 
-                    if (header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP
-                        && header.PrimativeType != Primative.PRIMATIVE_TRIANGLES)
-                        throw new NotImplementedException($"Encountered unknown Primative Type {(byte)header.PrimativeType:X}");
+                    //if (header.PrimativeType != Primative.PRIMATIVE_TRIANGLE_STRIP
+                    //    && header.PrimativeType != Primative.PRIMATIVE_TRIANGLES)
+                    //    throw new NotImplementedException($"Encountered unknown Primative Type {(byte)header.PrimativeType:X}");
 
                     strip.PrimativeType = header.PrimativeType;
 
@@ -325,15 +361,29 @@ namespace NicoLib
                             case MeshFormat.FORMAT_STATIC_EVEN:
                             case MeshFormat.FORMAT_STATIC_ODD:
                                 {
-                                    float x = bs.ReadSingle(); float y = bs.ReadSingle(); float z = bs.ReadSingle(); _ = bs.ReadSingle();
-                                    short u = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current);
-                                    short v = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current); 
-                                    _ = bs.ReadUInt32(); _ = bs.ReadUInt32();
-                                    byte r = (byte)bs.ReadUInt32(); byte g = (byte)bs.ReadUInt32(); byte b = (byte)bs.ReadUInt32(); byte a = (byte)bs.ReadUInt32();
-                                    vertex.Position = new Vector3(x, y, z);
-                                    vertex.UV = new Vector2((float)u / 4096, (float)v / 4096);
-                                    // TODO: proper alpha handling
-                                    vertex.Color = new Vector4((float)r / byte.MaxValue, (float)g / byte.MaxValue, (float)b / byte.MaxValue, (float)a / byte.MaxValue);
+                                    if (readPos)
+                                    {
+                                        float x = bs.ReadSingle(); float y = bs.ReadSingle(); float z = bs.ReadSingle(); _ = bs.ReadSingle();
+                                        vertex.Position = new Vector3(x, y, z);
+                                    }
+                                    if (readNormal)
+                                    {
+                                        float nx = bs.ReadSingle(); float ny = bs.ReadSingle(); float nz = bs.ReadSingle(); float nw = bs.ReadSingle();
+                                        // UNUSED (for now...)
+                                    }
+                                    if (readUV)
+                                    {
+                                        short u = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current);
+                                        short v = bs.ReadInt16(); bs.Seek(2, SeekOrigin.Current);
+                                        _ = bs.ReadUInt32(); _ = bs.ReadUInt32();
+                                        vertex.UV = new Vector2((float)u / 4096, (float)v / 4096);
+                                    }
+                                    if (readColor)
+                                    {
+                                        byte r = (byte)bs.ReadUInt32(); byte g = (byte)bs.ReadUInt32(); byte b = (byte)bs.ReadUInt32(); byte a = (byte)bs.ReadUInt32();
+                                        // TODO: proper alpha handling
+                                        vertex.Color = new Vector4((float)r / byte.MaxValue, (float)g / byte.MaxValue, (float)b / byte.MaxValue, (float)a / byte.MaxValue);
+                                    }
                                 }
                                 break;
                             case MeshFormat.FORMAT_SKELE_EVEN:
@@ -342,11 +392,21 @@ namespace NicoLib
                             default:
                                 throw new NotImplementedException($"Unexpected format {(ushort)header.Format:X}");
                         }
+                        if (vertex.Position.X > 0 && vertex.Position.X < 1e-10
+                            || vertex.Position.Y > 0 && vertex.Position.Y < 1e-10
+                            || vertex.Position.Z > 0 && vertex.Position.Z < 1e-10)
+                        {
+                            //PrintVifMem(vif, header);
+                        }
                         strip.Verts.Add(vertex);
                     }
 
                     strips.Add(strip);
                 }
+
+#if DEBUG
+                Array.Clear(vif.Memory);
+#endif
             }
             while (!done);
 
@@ -355,6 +415,20 @@ namespace NicoLib
             //    throw new Exception($"PANIC! Wrong counts expected/actual strips/tris {chunk.strip_count}/{chunk.tri_count} : {strips.Count}/{strips.Sum(s => s.TriCount)}");
 
             return strips;
+        }
+
+        private static void PrintVifMem(VifProcessor vif, VifHeader header)
+        {
+            Console.WriteLine("     | 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F");
+            Console.WriteLine("-----|------------------------------------------------");
+            //int addr = 0;
+            for (int addr = 0; addr < 0x10 + ((header.Vert_count + 1) * 0x30); addr += 0x10)
+            {
+                Console.WriteLine($"{addr:X4} | {vif.Memory[addr + 0]:X2} {vif.Memory[addr + 1]:X2} {vif.Memory[addr + 2]:X2} {vif.Memory[addr + 3]:X2} " +
+                    $"{vif.Memory[addr + 4]:X2} {vif.Memory[addr + 5]:X2} {vif.Memory[addr + 6]:X2} {vif.Memory[addr + 7]:X2} " +
+                    $"{vif.Memory[addr + 8]:X2} {vif.Memory[addr + 9]:X2} {vif.Memory[addr + 10]:X2} {vif.Memory[addr + 11]:X2} " +
+                    $"{vif.Memory[addr + 12]:X2} {vif.Memory[addr + 13]:X2} {vif.Memory[addr + 14]:X2} {vif.Memory[addr + 15]:X2}");
+            }
         }
     }
 }
