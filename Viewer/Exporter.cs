@@ -102,7 +102,8 @@ namespace Viewer
                         int stripBase = aiMesh.VertexCount;
                         foreach (var vert in strip.Verts)
                         {
-                            aiMesh.Vertices.Add(new Vector3D(vert.Position.X, vert.Position.Y, vert.Position.Z));
+                            // Note: x position needs to be flipped to match in-game.
+                            aiMesh.Vertices.Add(new Vector3D(-vert.Position.X, vert.Position.Y, vert.Position.Z));
                             aiMesh.TextureCoordinateChannels[0].Add(new Vector3D(vert.UV.X, vert.UV.Y, 0.0f));
                             aiMesh.VertexColorChannels[0].Add(new Color4D(vert.Color.X, vert.Color.Y, vert.Color.Z, vert.Color.W));
                         }

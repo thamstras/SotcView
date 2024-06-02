@@ -568,16 +568,19 @@ namespace Viewer
 
         void DoExport()
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(exportFilePath));
+            string exportFolder = Path.GetDirectoryName(exportFilePath);
+            Directory.CreateDirectory(exportFolder);
             Directory.CreateDirectory(exportTextureFolder);
+            string textureFolderRelative = Path.GetRelativePath(exportFolder, exportTextureFolder);
+            
             Nmo exportMesh = loadedMeshes.Find(m => m.Item1.ModelName == exportSelectedMeshName).Item1;
             foreach (var tex in exportMesh.Textures)
             {
                 if (loadedImages.TryGetValue(tex.Name, out var image))
                     exporter.ExportTexture(image.Item1, Path.Combine(exportTextureFolder, $"{tex.Name}.png"));
             }
-            exportTextureFolder = Path.GetRelativePath(Path.GetDirectoryName(exportFilePath), exportTextureFolder);
-            exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, exportTextureFolder);
+            exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, textureFolderRelative);
+            
             showExportWindow = false;
         }
 

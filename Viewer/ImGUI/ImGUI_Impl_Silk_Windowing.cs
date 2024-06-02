@@ -21,7 +21,6 @@ namespace Viewer.ImGUI
         //ClientApi
         private double Time;
         //MouseWindow
-        //MouseCursors[ImGuiMouseCursor_COUNT]
         private StandardCursor[] MouseCursors;
         Vector2 LastValidMousePos;
         //KeyOwnerWindows
@@ -158,12 +157,34 @@ namespace Viewer.ImGUI
             };
         }
 
+        private void HandleModKey(ImGuiKey key, bool down)
+        {
+            ImGuiIOPtr io = ImGui.GetIO();
+            if (key == ImGuiKey.LeftAlt || key == ImGuiKey.RightAlt)
+            {
+                io.AddKeyEvent(ImGuiKey.ModAlt, down);
+            }
+            else if (key == ImGuiKey.LeftCtrl || key == ImGuiKey.RightCtrl)
+            {
+                io.AddKeyEvent(ImGuiKey.ModCtrl, down);
+            }
+            else if (key == ImGuiKey.LeftShift || key == ImGuiKey.RightShift)
+            {
+                io.AddKeyEvent(ImGuiKey.ModShift, down);
+            }
+            else if (key == ImGuiKey.LeftSuper || key == ImGuiKey.RightSuper)
+            {
+                io.AddKeyEvent(ImGuiKey.ModSuper, down);
+            }
+        }
+
         private void KeyUpCallback(IKeyboard keyboard, Key key, int scancode)
         {
             ImGuiIOPtr io = ImGui.GetIO();
             ImGuiKey imGuiKey = TranslateKey(key);
             io.AddKeyEvent(imGuiKey, false);
             io.SetKeyEventNativeData(imGuiKey, (int)key, scancode);
+            HandleModKey(imGuiKey, false);
         }
 
         private void KeyDownCallback(IKeyboard keyboard, Key key, int scancode)
@@ -172,6 +193,7 @@ namespace Viewer.ImGUI
             ImGuiKey imGuiKey = TranslateKey(key);
             io.AddKeyEvent(imGuiKey, true);
             io.SetKeyEventNativeData(imGuiKey, (int)key, scancode);
+            HandleModKey(imGuiKey, true);
         }
 
         private void MouseScrollCallback(IMouse mouse, ScrollWheel scroll)
