@@ -51,10 +51,19 @@ namespace Viewer
 
         public void ExportTexture(Nto nto, string outFilePath)
         {
+            byte[] outData = new byte[nto.PixelData.Length];
+            Array.Copy(nto.PixelData, outData, nto.PixelData.Length);
+            for (int i = 0; i < outData.Length; i += 4)
+            {
+                // We wrote ABGR but we need ARGB so...
+                (outData[i + 2], outData[i + 0]) = (outData[i + 0], outData[i + 2]);
+            }
+
             Bitmap bitmap = new Bitmap(nto.Width, nto.Height, PixelFormat.Format32bppArgb);
             BitmapData data = bitmap.LockBits(new Rectangle(0, 0, nto.Width, nto.Height), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
             var dstLength = Math.Min(nto.PixelData.Length, data.Stride * data.Height);
-            Marshal.Copy(nto.PixelData, 0, data.Scan0, dstLength);
+            Marshal.Copy(outData, 0, data.Scan0, dstLength);
+            
             bitmap.Save(outFilePath, ImageFormat.Png);
         }
 
@@ -64,41 +73,58 @@ namespace Viewer
             
             foreach (var mat in nmo.Surfaces)
             {
-                var aiMat = new Material();
-                aiMat.Name = mat.Name;
-                aiMat.ShadingMode = ShadingMode.Flat;
-                var diffTex = new TextureSlot();
-                diffTex.TextureType = TextureType.Diffuse;
                 var tex = nmo.Textures[(int)mat.Hdr1[0].Three];
-                diffTex.FilePath = Path.Combine(textureFolder, $"{tex.Name}.png");
-                aiMat.TextureDiffuse = diffTex;
+                var diffTex = new TextureSlot
+                {
+                    TextureType = TextureType.Diffuse,
+                    TextureIndex = 0,
+                    FilePath = Path.Combine(textureFolder, $"{tex.Name}.png")
+                };
+                var aiMat = new Material
+                {
+                    Name = mat.Name,
+                    ShadingMode = ShadingMode.Flat,
+                    TextureDiffuse = diffTex
+                };
                 scene.Materials.Add(aiMat);
             }
             
-            foreach (var subMesh in nmo.Meshes)
+            foreach (var meshGroup in nmo.Meshes.GroupBy(c => c.surf))
             {
                 var aiMesh = new Mesh();
-                aiMesh.MaterialIndex = (int)subMesh.surf;
-                List<Nmo.TriStrip> geom = nmo.ReadVifPacket(subMesh);
-                foreach (var strip in geom)
+                aiMesh.Name = nmo.ModelName;
+                aiMesh.MaterialIndex = (int)meshGroup.Key;
+                foreach (var subMesh in meshGroup)
                 {
-                    int stripBase = aiMesh.VertexCount;
-                    foreach (var vert in strip.Verts)
+                    List<Nmo.TriStrip> geom = nmo.ReadVifPacket(subMesh);
+                    foreach (var strip in geom)
                     {
-                        aiMesh.Vertices.Add(new Vector3D(vert.Position.X, vert.Position.Y, vert.Position.Z));
-                        aiMesh.TextureCoordinateChannels[0].Add(new Vector3D(vert.UV.X, vert.UV.Y, 0.0f));
-                        aiMesh.VertexColorChannels[0].Add(new Color4D(vert.Color.X, vert.Color.Y, vert.Color.Z, vert.Color.W));
-                    }
-                    for (int i = 0; i < strip.Verts.Count - 2; i++)
-                    {
-                        aiMesh.Faces.Add(new Face([stripBase + i, stripBase + i + 1, stripBase + i + 2]));
+                        int stripBase = aiMesh.VertexCount;
+                        foreach (var vert in strip.Verts)
+                        {
+                            aiMesh.Vertices.Add(new Vector3D(vert.Position.X, vert.Position.Y, vert.Position.Z));
+                            aiMesh.TextureCoordinateChannels[0].Add(new Vector3D(vert.UV.X, vert.UV.Y, 0.0f));
+                            aiMesh.VertexColorChannels[0].Add(new Color4D(vert.Color.X, vert.Color.Y, vert.Color.Z, vert.Color.W));
+                        }
+                        bool flip = false;
+                        for (int i = 0; i < strip.Verts.Count - 2; i++)
+                        {
+                            if (!flip)
+                                aiMesh.Faces.Add(new Face([stripBase + i, stripBase + i + 1, stripBase + i + 2]));
+                            else
+                                aiMesh.Faces.Add(new Face([stripBase + i, stripBase + i + 2, stripBase + i + 1]));
+                            flip = !flip;
+                        }
                     }
                 }
                 scene.Meshes.Add(aiMesh);
             }
 
-            var node = new Node();
-            node.Transform = Matrix4x4.Identity;
+            var node = new Node
+            {
+                Transform = Matrix4x4.Identity,
+                Name = nmo.ModelName
+            };
             for (int i = 0; i < scene.MeshCount; i++)
                 node.MeshIndices.Add(i);
             scene.RootNode = node;

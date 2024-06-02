@@ -576,7 +576,9 @@ namespace Viewer
                 if (loadedImages.TryGetValue(tex.Name, out var image))
                     exporter.ExportTexture(image.Item1, Path.Combine(exportTextureFolder, $"{tex.Name}.png"));
             }
+            exportTextureFolder = Path.GetRelativePath(Path.GetDirectoryName(exportFilePath), exportTextureFolder);
             exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, exportTextureFolder);
+            showExportWindow = false;
         }
 
         //void TestFile()
