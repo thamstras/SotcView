@@ -94,6 +94,7 @@ namespace Viewer
                 var aiMesh = new Mesh();
                 aiMesh.Name = nmo.ModelName;
                 aiMesh.MaterialIndex = (int)meshGroup.Key;
+                aiMesh.UVComponentCount[0] = 2;
                 foreach (var subMesh in meshGroup)
                 {
                     List<Nmo.TriStrip> geom = nmo.ReadVifPacket(subMesh);
@@ -130,7 +131,8 @@ namespace Viewer
                 node.MeshIndices.Add(i);
             scene.RootNode = node;
 
-            _context.ExportFile(scene, outFilePath, formatIdentifier);
+            scene.Metadata["UnitScaleFactor"] = new Metadata.Entry(MetaDataType.Double, 100.0);
+            _context.ExportFile(scene, outFilePath, formatIdentifier, PostProcessSteps.FlipWindingOrder | PostProcessSteps.FlipUVs | PostProcessSteps.ValidateDataStructure);
         }
     }
 }

@@ -270,6 +270,10 @@ namespace Viewer
                     {
                         ShowExportWindow();
                     }
+                    if (ImGui.MenuItem("Bulk Export..."))
+                    {
+                        ShowBulkExport();
+                    }
                     ImGui.Separator();
                     if (ImGui.MenuItem("Exit"))
                     {
@@ -521,6 +525,7 @@ namespace Viewer
         Exporter.FormatDescription exportFormat;
         Exporter? exporter = null;
         bool showExportWindow = false;
+        bool bulkExportMode = false;
 
         void ShowExportWindow()
         {
@@ -528,6 +533,15 @@ namespace Viewer
             exporter ??= new Exporter();
             exportFormat = exporter.GetExportFormats()[0];
             exportSelectedMeshName = loadedMeshes[0].Item1.ModelName;
+            bulkExportMode = false;
+        }
+
+        void ShowBulkExport()
+        {
+            showExportWindow = true;
+            exporter ??= new Exporter();
+            exportFormat = exporter.GetExportFormats()[0];
+            bulkExportMode = true;
         }
 
         void DrawExportWindow()
@@ -536,16 +550,24 @@ namespace Viewer
             {
                 Widgets.Window("Export Options", ref showExportWindow, () =>
                 {
-                    if (ImGui.BeginCombo("Export mesh", exportSelectedMeshName))
+                    if (!bulkExportMode)
                     {
-                        foreach ((Nmo nmo, _) in loadedMeshes)
+                        if (ImGui.BeginCombo("Export mesh", exportSelectedMeshName))
                         {
-                            if (ImGui.Selectable(nmo.ModelName, nmo.ModelName == exportSelectedMeshName))
-                                exportSelectedMeshName = nmo.ModelName;
+                            foreach ((Nmo nmo, _) in loadedMeshes)
+                            {
+                                if (ImGui.Selectable(nmo.ModelName, nmo.ModelName == exportSelectedMeshName))
+                                    exportSelectedMeshName = nmo.ModelName;
+                            }
+                            ImGui.EndCombo();
                         }
-                        ImGui.EndCombo();
+                        ImGui.InputText("File Path", ref exportFilePath, 255);
                     }
-                    ImGui.InputText("File Path", ref exportFilePath, 255);
+                    else
+                    {
+                        ImGui.Text($"Will export {loadedMeshes.Count} meshes.");
+                        ImGui.InputText("Output Folder", ref exportFilePath, 255);
+                    }
                     ImGui.SameLine();
                     ImGui.Button("Select");
                     ImGui.InputText("Texture Folder", ref exportTextureFolder, 255);
@@ -568,18 +590,40 @@ namespace Viewer
 
         void DoExport()
         {
-            string exportFolder = Path.GetDirectoryName(exportFilePath);
+            string exportFolder = exportFilePath;
+            if (!bulkExportMode)
+            {
+                exportFolder = Path.GetDirectoryName(exportFilePath);
+            }
             Directory.CreateDirectory(exportFolder);
             Directory.CreateDirectory(exportTextureFolder);
             string textureFolderRelative = Path.GetRelativePath(exportFolder, exportTextureFolder);
-            
-            Nmo exportMesh = loadedMeshes.Find(m => m.Item1.ModelName == exportSelectedMeshName).Item1;
-            foreach (var tex in exportMesh.Textures)
+
+            if (!bulkExportMode)
             {
-                if (loadedImages.TryGetValue(tex.Name, out var image))
-                    exporter.ExportTexture(image.Item1, Path.Combine(exportTextureFolder, $"{tex.Name}.png"));
+                Nmo exportMesh = loadedMeshes.Find(m => m.Item1.ModelName == exportSelectedMeshName).Item1;
+                foreach (var tex in exportMesh.Textures)
+                {
+                    if (loadedImages.TryGetValue(tex.Name, out var image))
+                        exporter.ExportTexture(image.Item1, Path.Combine(exportTextureFolder, $"{tex.Name}.png"));
+                }
+                exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, textureFolderRelative);
             }
-            exporter.ExportModel(exportMesh, exportFilePath, exportFormat.ID, textureFolderRelative);
+            else
+            {
+                foreach ((var name, (var nto, _)) in loadedImages)
+                {
+                    exporter.ExportTexture(nto,
+                        Path.Combine(exportTextureFolder, Path.ChangeExtension(name, ".png")));
+                }
+                foreach ((var nmo, _) in loadedMeshes)
+                {
+                    exporter.ExportModel(nmo,
+                        Path.Combine(exportFilePath, Path.ChangeExtension(nmo.ModelName, exportFormat.FileExtension)),
+                        exportFormat.ID,
+                        textureFolderRelative);
+                }
+            }
             
             showExportWindow = false;
         }
