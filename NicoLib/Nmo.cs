@@ -150,6 +150,10 @@ namespace NicoLib
             reader.Seek(xff.Header.Off_sign);
 
             FileHeader header = BinaryMapping.ReadObject<FileHeader>(stream);
+            if (header.Ident != 0x004F4D4E)
+                throw new Exception("Invalid NMO signature");
+            if (header.Unk_04 != 3)
+                throw new Exception("Unsupported NMO version");
 
             List<ChunkDef> chunkDefs = new List<ChunkDef>();
             for (int i = 0; i < 5; i++)
@@ -281,18 +285,31 @@ namespace NicoLib
             //if (chunk.unk_04 != 0 || chunk.unk_0c != 3 || chunk.unk_1c != 0)
             //    Console.WriteLine($"GOT ONE! {chunk.unk_04} {chunk.unk_0c} {chunk.unk_1c}");
 
-            var format = surf.MeshFormat;
-            if (format != 0x86 && format != 0x97)
+            var format = surf.MeshFormat & 0xF;
+            if (format != 0x4 && format != 0x6 && format != 0x7)
+            {
+                VifProcessor vif2 = new VifProcessor(chunk.Data);
+                vif2.Run();
+                using MemoryStream ms = new MemoryStream(vif2.Memory);
+                using BinaryReader bs = new BinaryReader(ms);
+                VifHeader header = BinaryMapping.ReadObject<VifHeader>(ms);
+                PrintVifMem(vif2, header);
                 throw new Exception($"Unknown surf format {format:X}");
+            }
 
             bool readPos = false, readNormal = false, readUV = false, readColor = false;
-            if (format == 0x86)
+            if (format == 0x4)
+            {
+                readPos = true;
+                readColor = true;
+            }
+            else if (format == 0x6)
             {
                 readPos = true;
                 readUV = true;
                 readColor = true;
             }
-            else if (format == 0x97)
+            else if (format == 0x7)
             {
                 readPos = true;
                 readNormal = true;
@@ -383,6 +400,10 @@ namespace NicoLib
                                         byte r = (byte)bs.ReadUInt32(); byte g = (byte)bs.ReadUInt32(); byte b = (byte)bs.ReadUInt32(); byte a = (byte)bs.ReadUInt32();
                                         // TODO: proper alpha handling
                                         vertex.Color = new Vector4((float)r / byte.MaxValue, (float)g / byte.MaxValue, (float)b / byte.MaxValue, (float)a / byte.MaxValue);
+                                    }
+                                    else
+                                    {
+                                        vertex.Color = new Vector4(1.0f, 1.0f, 1.0f, 0.5f);
                                     }
                                 }
                                 break;

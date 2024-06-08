@@ -80,7 +80,7 @@ namespace NicoLib
         {
             return mode switch
             {
-                PixelMode.CLUT_8 => 255 * 4,
+                PixelMode.CLUT_8 => 256 * 4,
                 PixelMode.CLUT_4 => 16 * 4,
                 _ => 0,
             };
@@ -95,6 +95,10 @@ namespace NicoLib
             reader.Seek(xff.Header.Off_sign);
 
             Header header = BinaryMapping.ReadObject<Header>(stream);
+            if (header.Nto_sig != 0x324F544E)
+                throw new Exception("Invalid NTO2 Signature");
+            if (header.Version != 3)
+                throw new Exception("Unsupported NTO Version");
 
             //var mipCount = header.Mipmaps >> 4;
             var WH = header.WH;
@@ -133,8 +137,8 @@ namespace NicoLib
 
             void CopyPal(byte palIdx, int dst)
             {
-                var max = pixelMode == PixelMode.CLUT_8 ? 255 : 16;
-                ArgumentOutOfRangeException.ThrowIfGreaterThan(palIdx, max);
+                var max = pixelMode == PixelMode.CLUT_8 ? 256 : 16;
+                ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(palIdx, max);
                 ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(dst, result.Length);
 
                 result[dst * 4 + 0] = pal[palIdx * 4 + 0];
@@ -185,10 +189,10 @@ namespace NicoLib
                             for (int i = 0; i < (width * height) / 2; i++)
                             {
                                 byte d = encodedPixels[i];
-                                byte hi = (byte)(d >> 4);
                                 byte lo = (byte)(d & 0xf);
-                                CopyPal(hi, i * 2);
-                                CopyPal(lo, i * 2 + 1);
+                                byte hi = (byte)(d >> 4);
+                                CopyPal(lo, i * 2);
+                                CopyPal(hi, i * 2 + 1);
                             }
                         }
                         else

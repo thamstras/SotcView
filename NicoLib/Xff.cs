@@ -95,6 +95,9 @@ namespace NicoLib
             using BinaryReader reader = new BinaryReader(stream, Encoding.UTF8, true);
 
             FileHeader header = BinaryMapping.ReadObject<FileHeader>(stream);
+            if (header.Ident != 0x00666678
+                && header.Ident != 32666678)
+                throw new Exception("Invalid XFF/XFF2 Signature");
             
             reader.Seek(header.Off_secnameoffs);
             List<int> section_name_offsets = new List<int>();

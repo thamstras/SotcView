@@ -158,7 +158,8 @@ namespace Viewer.Graphics
             foreach (var subMesh in SubMeshes)
             {
                 Material mat = Materials[subMesh.MaterialIndex];
-                if (oglTextures[mat.TextureIndex] != null)
+                if (mat.TextureIndex < oglTextures.Count
+                    && oglTextures[mat.TextureIndex] != null)
                     oglTextures[mat.TextureIndex].Bind(0);
                 else
                     dummyTexture?.Bind(0);
