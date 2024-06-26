@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
@@ -66,6 +67,17 @@ namespace Viewer.OGL
             }
 
             return location;
+        }
+
+        public unsafe void LoadMatrixUniform(string uniform, Matrix4x4 matrix)
+        {
+            var location = GetUniformLocation(uniform);
+            _gl.UniformMatrix4(location, 1, false, (float*)&matrix);
+        }
+
+        public unsafe void LoadMatrixUniform(int uniformLocation, Matrix4x4 matrix)
+        {
+            _gl.UniformMatrix4(uniformLocation, 1, false, (float*)&matrix);
         }
 
         private uint CreateProgram(params (ShaderType Type, string source)[] shaderPaths)

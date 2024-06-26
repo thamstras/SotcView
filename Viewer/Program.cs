@@ -32,10 +32,15 @@ namespace Viewer
         bool _requestExit = false;
 
         ShaderProgram? theShader = null;
+        private ShaderProgram debugShader;
         View? view = null;
         List<(Nmo, StaticMesh)> loadedMeshes = new List<(Nmo, StaticMesh)>();
         Box3D<float> meshBounds;
         //GLStats stats;
+        DebugDraw debug;
+        bool drawBoxes;
+        int boxDrawLevel = 0;
+        Vector4 boxColor = new Vector4(1.0f, 0.0f, 0.0f, 1.0f);
 
         Dictionary<string, (Nto, Image)> loadedImages = new Dictionary<string, (Nto, Image)>();
         //float tviewScale = 1.0f;
@@ -89,16 +94,21 @@ namespace Viewer
                 io.Fonts.AddFontFromFileTTF(".\\Resources\\Fonts\\Aldrich-Regular.ttf", 12.0f);
             });
 
-            //var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.vert.glsl");
-            //var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.frag.glsl");
+
             var vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.vert.glsl");
             var fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol_tex.frag.glsl");
             theShader = new ShaderProgram(_gl, vertShader, fragShader);
+
+            vertShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.vert.glsl");
+            fragShader = File.ReadAllText(".\\Resources\\Shaders\\unlit_vcol.frag.glsl");
+            debugShader = new ShaderProgram(_gl, vertShader, fragShader);
 
             view = new View();
             view.Resize(_Window.FramebufferSize.X, _Window.FramebufferSize.Y);
 
             //stats = new GLStats(_gl);
+
+            debug = new DebugDraw(_gl);
         }
 
         private void OnMouseUp(IMouse mouse, MouseButton button)
@@ -179,6 +189,14 @@ namespace Viewer
             //    ImGui.Text("No Index Loaded!");
             //    ImGui.Text("No DAT File Loaded!");
             //}
+
+            if (selectedModel != null && drawBoxes)
+            {
+                if (selectedModel.Boxes.Count > 0)
+                {
+                    BoxTree(selectedModel.Boxes, selectedModel.Boxes[0], boxDrawLevel);
+                }
+            }
         }
 
         private void OnRender(double delta)
@@ -210,12 +228,34 @@ namespace Viewer
                 {
                     mesh.Draw(theShader);
                 }
-
             }
+
+
+            debugShader.UseShader();
+            debugShader.LoadMatrixUniform("model", view.GState.Model.ToSystem());
+            debugShader.LoadMatrixUniform("view", view.GState.View.ToSystem());
+            debugShader.LoadMatrixUniform("projection", view.GState.Projection.ToSystem());
+            debug.Render();
 
             //stats.EndFrame();
 
             _ImGui.Render();
+        }
+
+        private void BoxTree(List<Nmo.ChunkBox> boxes, Nmo.ChunkBox nmoBox, int level)
+        {
+            Box3D<float> box = new Box3D<float>(nmoBox.X1, nmoBox.Y1, nmoBox.Z1, nmoBox.X2, nmoBox.Y2, nmoBox.Z2);
+            //debug.DrawCube(box.Center.ToSystem(), box.Size.ToSystem(), boxColor);
+            debug.DrawCube(box.Center.ToSystem(), box.Size.ToSystem(), new Vector4(1.0f - ((float)level / (boxDrawLevel + 1)), 0.0f, (float)level / (boxDrawLevel + 1), 1.0f));
+
+            if (level > 0)
+            {
+                if (nmoBox.Left >= 0 && nmoBox.Left < boxes.Count)
+                    BoxTree(boxes, boxes[nmoBox.Left], level - 1);
+                
+                if (nmoBox.Right >= 0 && nmoBox.Right < boxes.Count)
+                    BoxTree(boxes, boxes[nmoBox.Right], level - 1);
+            }
         }
 
         private void OnFramebufferResize(Vector2D<int> size)
@@ -472,13 +512,16 @@ namespace Viewer
                         ImGui.Text($"VIF  {chnk[3].Offset:X4} {chnk[3].Count:G4} {chnk[3].Unk_08:X4} {chnk[3].Unk_0C:X4}");
                         ImGui.Text($"NAME {chnk[4].Offset:X4} {chnk[4].Count:G4} {chnk[4].Unk_08:X4} {chnk[4].Unk_0C:X4}");
                     });
-                    Widgets.TreeNode("Unknown Chunks", () =>
+                    Widgets.TreeNode("Box Chunk", () =>
                     {
-                        var chunk = selectedModel.Boxes[0];
-                        ImGui.Text("Note: count of this chunk type is currently unknown, only first shown.");
-                        ImGui.Text($"{chunk.X1:F4} {chunk.Y1:F4} {chunk.Z1:F4} {chunk.W1:F4}");
-                        ImGui.Text($"{chunk.X2:F4} {chunk.Y2:F4} {chunk.Z2:F4} {chunk.W2:F4}");
-                        ImGui.Text($"{chunk.Left:G4} {chunk.Right:G4} {chunk.C:G4} {chunk.D:G4}");
+                        ImGui.Text($"{selectedModel.Boxes.Count} Boxes");
+                        foreach (var chunk in selectedModel.Boxes)
+                        {
+                            ImGui.NewLine();
+                            ImGui.Text($"1 {chunk.X1:F4} {chunk.Y1:F4} {chunk.Z1:F4} {chunk.W1:F4}");
+                            ImGui.Text($"2 {chunk.X2:F4} {chunk.Y2:F4} {chunk.Z2:F4} {chunk.W2:F4}");
+                            ImGui.Text($"L {chunk.Left:G4} R {chunk.Right:G4} {chunk.C:G4} {chunk.D:G4}");
+                        }
                     });
                     Widgets.TreeNode("TEX Chunks", () =>
                     {
@@ -515,6 +558,13 @@ namespace Viewer
                             });
                         }
                     });
+                    ImGui.Separator();
+                    ImGui.Checkbox("Draw boxes", ref drawBoxes);
+                    if (drawBoxes)
+                    {
+                        ImGui.DragInt("Level", ref boxDrawLevel, 1.0f, 0);
+                        //ImGui.ColorPicker4("Color", ref boxColor);
+                    }
                 });
             }
         }
